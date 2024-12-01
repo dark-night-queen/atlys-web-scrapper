@@ -5,24 +5,22 @@ from loguru import logger
 
 
 async def run_redis_server(port=6379):
-        # Check if Redis is installed
-        result = await asyncio.create_subprocess_exec(
-            "redis-server",
-            "--version",
+    # Check if Redis is installed
+    result = await asyncio.create_subprocess_exec(
+        "redis-server",
+        "--version",
+    )
+    await result.wait()
+    if result.returncode != 0:
+        logger.error(
+            "Redis server is not installed or not in PATH. Please install it and try again."
         )
-        await result.wait()
-        if result.returncode != 0:
-            logger.error(
-                "Redis server is not installed or not in PATH. Please install it and try again."
-            )
-            sys.exit(1)
+        sys.exit(1)
 
-        # Start Redis server
-        logger.info("Starting Redis server...")
-        process = await asyncio.create_subprocess_exec(
-            "redis-server", "--port", str(port)
-        )
-        await process.wait()
+    # Start Redis server
+    logger.info("Starting Redis server...")
+    process = await asyncio.create_subprocess_exec("redis-server", "--port", str(port))
+    await process.wait()
 
 
 async def run_uvicorn(host="127.0.0.1", port=8000):

@@ -49,19 +49,31 @@ class Scrapper:
 
     def _scrap_page(self, url: str) -> BeautifulSoup:
         """
-        Scrap the page using the provided URL and proxy
+        Scrap the page using the provided URL and proxy.
+        If failed, will retry the request for the number of times specified in the settings.
+        :param url: URL to scrap
+        :return: BeautifulSoup object
         """
         logger.info(f"Scraping page: {url}")
 
         # Proxy setup
         proxies = {"http": self.proxy, "https": self.proxy} if self.proxy else None
 
-        response = requests.get(url, proxies=proxies)
-        response.raise_for_status()
+        for attempt in range(1, self.retry_count + 1):
+            try:
+                response = requests.get(url, proxies=proxies)
+                response.raise_for_status()
 
-        soup = BeautifulSoup(response.text, "html5lib")
+                soup = BeautifulSoup(response.text, "html5lib")
 
-        return soup
+            except requests.RequestException as e:
+                logger.warning(
+                    f"Attempt {attempt}/{self.retry_count} failed for {url}: {e}"
+                )
+                if attempt == self.retry_count:
+                    raise e
+            else:
+                return soup
 
     @abc.abstractmethod
     def _extract_data(self, scrapped_data: BeautifulSoup) -> list:
@@ -92,7 +104,11 @@ class Scrapper:
         }
 
     async def scrap_data(self, page: int) -> None:
-        """ """
+        """
+        Scrap data from the given page
+        :param page:
+        :return:
+        """
         url = f"{self.url}/page/{page}"
         scrapped_data = self._scrap_page(url)
         extracted_data = self._extract_data(scrapped_data)
@@ -101,7 +117,7 @@ class Scrapper:
 
     async def run(self) -> None:
         """
-        Run the scrapper, scrap the data, store it and notify the user.
+        Run the scrapper, scrap the data, store it.
         """
         logger.info("Started Scrapping...")
         self.validate_input()
@@ -150,6 +166,10 @@ class ProductScrapper(Scrapper):
         return extract_data
 
     def _store_data(self, extracted_data: list[Product]) -> None:
+        """
+        Store the scrapped data in the redis database
+        :param extracted_data: List of Product objects
+        """
         logger.info(f"Storing {len(extracted_data)} products")
 
         item_updated = []
@@ -162,5 +182,8 @@ class ProductScrapper(Scrapper):
         logger.info(f"Updated {len(item_updated)} products")
 
     async def run(self) -> None:
+        """
+        Run the scrapper, scrap the data, store it in redis, export csv file and notify the user on console.
+        """
         await super().run()
         await Product.export()

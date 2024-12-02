@@ -28,14 +28,12 @@ class Cache:
         Set the value in the Redis database
         :param key:
         :param value:
-        :return:
         """
         self.redis.set(key, value)
 
     def clear(self) -> None:
         """
         Clear the Redis database
-        :return:
         """
         logger.info("Current Redis database cleared!")
         self.redis.flushdb()
@@ -43,7 +41,7 @@ class Cache:
     def get_all_keys(self) -> list:
         """
         Get all keys from the Redis database
-        :return:
+        :return: List of keys in the database
         """
         cursor = 0
         keys = []
@@ -59,7 +57,6 @@ class Cache:
     def export(self, filename: str, headers: list[str]) -> None:
         """
         Export the current state of the Redis database into csv file
-        :return:
         """
         # Retrieve all keys using SCAN
         keys = self.get_all_keys()

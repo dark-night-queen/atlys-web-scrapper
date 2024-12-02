@@ -67,5 +67,5 @@ class Product:
         :return:
         """
         headers = ["path_to_image", "product_title", "product_price"]
-        cache.export("product", headers)
+        cache.export(filename="product", headers=headers)
         cls._notify_user("Data has been successfully exported.")

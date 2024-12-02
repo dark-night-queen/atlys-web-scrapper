@@ -10,12 +10,12 @@ from service.notifier import ConsoleNotifier
 
 
 class Settings:
-    URL = "https://dentalstall.com/shop/"
+    URL = "https://dentalstall.com/shop"
     PAGE_DEPTH = 1
     PROXY = None
 
     RETRY_COUNT = 3
-    RETRY_DELAY = 5
+    RETRY_DELAY = 2
 
 
 class Scrapper:
@@ -47,7 +47,7 @@ class Scrapper:
 
         return is_valid
 
-    def _scrap_page(self, url: str) -> BeautifulSoup:
+    async def _scrap_page(self, url: str) -> BeautifulSoup:
         """
         Scrap the page using the provided URL and proxy.
         If failed, will retry the request for the number of times specified in the settings.
@@ -61,7 +61,7 @@ class Scrapper:
 
         for attempt in range(1, self.retry_count + 1):
             try:
-                response = requests.get(url, proxies=proxies)
+                response = requests.get(url, proxies=proxies, timeout=5)
                 response.raise_for_status()
 
                 soup = BeautifulSoup(response.text, "html5lib")
@@ -72,6 +72,11 @@ class Scrapper:
                 )
                 if attempt == self.retry_count:
                     raise e
+                else:
+                    logger.info(
+                        f"Retrying in {self.retry_delay} seconds... (Attempt {attempt})"
+                    )
+                    await asyncio.sleep(self.retry_delay)  # Delay before retrying
             else:
                 return soup
 
@@ -110,7 +115,7 @@ class Scrapper:
         :return:
         """
         url = f"{self.url}/page/{page}"
-        scrapped_data = self._scrap_page(url)
+        scrapped_data = await self._scrap_page(url)
         extracted_data = self._extract_data(scrapped_data)
         self.item_scraped.extend(extracted_data)
         self._store_data(extracted_data)

@@ -1,4 +1,5 @@
 import abc
+import asyncio
 
 import requests
 from bs4 import BeautifulSoup
@@ -69,39 +70,47 @@ class Scrapper:
         """
 
     @abc.abstractmethod
-    def _store_data(self) -> None:
+    def _store_data(self, *args, **kwargs) -> None:
         """
         Store the scrapped data in the database
         """
 
-    @abc.abstractmethod
     def generate_report(self) -> dict:
         """
         Generate a report of scrapped data + data stored within db
+        :return: Dictionary containing the report
         """
+        return {
+            "product": {
+                "scraped": {
+                    "total": len(self.item_scraped),
+                },
+                "updated": {
+                    "total": len(self.item_updated),
+                },
+            }
+        }
 
-    def _notify_user(self, **kwargs) -> None:
-        """
-        Generate a report of scrapped data and notify the user
-        """
-        report = self.generate_report()
-        ConsoleNotifier.notify(f"The following data was scrapped:\n {report}")
+    async def scrap_data(self, page: int) -> None:
+        """ """
+        url = f"{self.url}/page/{page}"
+        scrapped_data = self._scrap_page(url)
+        extracted_data = self._extract_data(scrapped_data)
+        self.item_scraped.extend(extracted_data)
+        self._store_data(extracted_data)
 
-    def run(self) -> None:
+    async def run(self) -> None:
         """
         Run the scrapper, scrap the data, store it and notify the user.
         """
         logger.info("Started Scrapping...")
         self.validate_input()
 
-        for page in range(1, self.page_depth + 1):
-            url = f"{self.url}?page={page}"
-            scrapped_data = self._scrap_page(url)
-            extracted_data = self._extract_data(scrapped_data)
-            self.item_scraped.extend(extracted_data)
-
-        self._store_data()
-        self._notify_user()
+        tasks = [
+            asyncio.create_task(self.scrap_data(page))
+            for page in range(1, self.page_depth + 1)
+        ]
+        await asyncio.gather(*tasks)
 
 
 class ProductScrapper(Scrapper):
@@ -124,40 +133,34 @@ class ProductScrapper(Scrapper):
 
         extract_data = []
         for product in products:
-            name = product.select_one(".woo-loop-product__title").text.strip()
-            price = product.select_one(".woocommerce-Price-amount").text.strip()
+            name = product.find("div", attrs={"class": "addtocart-buynow-btn"}).a[
+                "data-title"
+            ]
             image = product.select_one(".attachment-woocommerce_thumbnail")["src"]
-            short_description = product.select_one(
-                ".woocommerce-product-details__short-description"
-            ).text.strip()
+            # price can be unavailable
+            price = product.select_one(".woocommerce-Price-amount")
+            price = price.text.strip() if price else ""
 
             product = Product(
                 path_to_image=image,
                 product_title=name,
                 product_price=price,
-                short_description=short_description,
             )
-
             extract_data.append(product)
         return extract_data
 
-    def _store_data(self) -> None:
-        super()._store_data()
+    def _store_data(self, extracted_data: list[Product]) -> None:
+        logger.info(f"Storing {len(extracted_data)} products")
 
-    def generate_report(self) -> dict:
-        """
-        Generate a report of scrapped data + data stored within db
-        :return: Dictionary containing the report
-        """
-        return {
-            "product": {
-                "scraped": {
-                    "total": len(self.item_scraped),
-                    # "result": self.item_scraped,
-                },
-                "updated": {
-                    "total": len(self.item_updated),
-                    # "result": self.item_updated,
-                },
-            }
-        }
+        item_updated = []
+        for product in extracted_data:
+            is_updated, _ = product.update_cache()
+            if is_updated:
+                item_updated.append(product)
+
+        self.item_updated.extend(item_updated)
+        logger.info(f"Updated {len(item_updated)} products")
+
+    async def run(self) -> None:
+        await super().run()
+        await Product.export()
